@@ -2,7 +2,6 @@ import former
 from former import util
 from former.util import d, here
 
-
 import torch
 from torch import nn
 from torch.autograd import Variable
@@ -14,9 +13,6 @@ from torchtext import data, datasets, vocab
 import numpy as np
 
 from argparse import ArgumentParser
-import os
-from copy import deepcopy
-from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 
 import random, tqdm, sys, math, gzip
@@ -26,8 +22,6 @@ LOG2E = math.log2(math.e)
 TEXT = data.Field(lower=True, include_lengths=True, batch_first=True)
 LABEL = data.Field(sequential=False)
 NUM_CLS = 2
-
-MODEL_OUTPUT_PATH = './model_output'
 
 def go(arg):
     """
@@ -63,19 +57,24 @@ def go(arg):
         mx = arg.max_length
 
     # create the model
-    model = former.CTransformer(emb=arg.embedding_size, heads=arg.num_heads, depth=arg.depth, seq_length=mx, num_tokens=arg.vocab_size, num_classes=NUM_CLS, max_pool=arg.max_pool)
+    model = former.CTransformer(
+        emb=arg.embedding_size, 
+        heads=arg.num_heads, 
+        depth=arg.depth, 
+        seq_length=mx, 
+        num_tokens=arg.vocab_size, 
+        num_classes=NUM_CLS, 
+        max_pool=arg.max_pool)
+        
     if torch.cuda.is_available():
         model.cuda()
     
-    model = nn.DataParallel(model,device_ids=[0,1,2])
+    # utilized the 
+    model = nn.DataParallel(model)
 
-    opt = torch.optim.SGD(lr=arg.lr, params=model.parameters(), momentum =arg.momentum)
+    opt = torch.optim.Adam(lr=arg.lr, params=model.parameters())
     sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / (arg.lr_warmup / arg.batch_size), 1.0))
 
-    #accuracy to save the best model state
-    best_accuracy = 0
-    best_model_state = None
-    
     # training loop
     seen = 0
     for e in range(arg.num_epochs):
@@ -128,20 +127,6 @@ def go(arg):
             acc = cor / tot
             print(f'-- {"test" if arg.final else "validation"} accuracy {acc:.3}')
             tbw.add_scalar('classification/test-loss', float(loss.item()), e)
-
-            # update the best model
-            if acc > best_accuracy:
-                best_accuracy, best_model_state = acc, deepcopy(model.state_dict())
-
-    
-    # if not model
-
-    if not os.path.exists(MODEL_OUTPUT_PATH):
-        os.mkdir(MODEL_OUTPUT_PATH)
-    
-    time_stamp = datetime.now()
-    torch.save(best_model_state, MODEL_OUTPUT_PATH + 
-        f'{time_stamp}_SGD_momentum_{arg.momentum}_acc_{best_accuracy:3f}')
 
 
 if __name__ == "__main__":
@@ -209,11 +194,6 @@ if __name__ == "__main__":
                         dest="gradient_clipping",
                         help="Gradient clipping.",
                         default=1.0, type=float)
-
-    parser.add_argument("--momentum",
-                        dest="momentum",
-                        help="momentum for SGD",
-                        default=0.9, type=float)
 
     options = parser.parse_args()
 
