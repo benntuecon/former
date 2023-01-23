@@ -1,5 +1,5 @@
 import former
-from former import util
+from ..former import util
 from former.util import d, here
 
 
@@ -19,7 +19,11 @@ from copy import deepcopy
 from datetime import datetime
 from torch.utils.tensorboard import SummaryWriter
 
-import random, tqdm, sys, math, gzip
+import random
+import tqdm
+import sys
+import math
+import gzip
 
 # Used for converting between nats and bits
 LOG2E = math.log2(math.e)
@@ -29,11 +33,12 @@ NUM_CLS = 2
 
 MODEL_OUTPUT_PATH = './model_output'
 
+
 def go(arg):
     """
     Creates and trains a basic transformer for the IMDB sentiment classification task.
     """
-    tbw = SummaryWriter(log_dir=arg.tb_dir) # Tensorboard logging
+    tbw = SummaryWriter(log_dir=arg.tb_dir)  # Tensorboard logging
 
     # load the IMDB data
     if arg.final:
@@ -42,18 +47,22 @@ def go(arg):
         TEXT.build_vocab(train, max_size=arg.vocab_size - 2)
         LABEL.build_vocab(train)
 
-        train_iter, test_iter = data.BucketIterator.splits((train, test), batch_size=arg.batch_size, device=util.d())
+        train_iter, test_iter = data.BucketIterator.splits(
+            (train, test), batch_size=arg.batch_size, device=util.d())
     else:
         tdata, _ = datasets.IMDB.splits(TEXT, LABEL)
         train, test = tdata.split(split_ratio=0.8)
 
-        TEXT.build_vocab(train, max_size=arg.vocab_size - 2) # - 2 to make space for <unk> and <pad>
+        # - 2 to make space for <unk> and <pad>
+        TEXT.build_vocab(train, max_size=arg.vocab_size - 2)
         LABEL.build_vocab(train)
 
-        train_iter, test_iter = data.BucketIterator.splits((train, test), batch_size=arg.batch_size, device=util.d())
+        train_iter, test_iter = data.BucketIterator.splits(
+            (train, test), batch_size=arg.batch_size, device=util.d())
 
     print(f'- nr. of training examples {len(train_iter)}')
-    print(f'- nr. of {"test" if arg.final else "validation"} examples {len(test_iter)}')
+    print(
+        f'- nr. of {"test" if arg.final else "validation"} examples {len(test_iter)}')
 
     if arg.max_length < 0:
         mx = max([input.text[0].size(1) for input in train_iter])
@@ -63,19 +72,22 @@ def go(arg):
         mx = arg.max_length
 
     # create the model
-    model = former.CTransformer(emb=arg.embedding_size, heads=arg.num_heads, depth=arg.depth, seq_length=mx, num_tokens=arg.vocab_size, num_classes=NUM_CLS, max_pool=arg.max_pool)
+    model = former.CTransformer(emb=arg.embedding_size, heads=arg.num_heads, depth=arg.depth,
+                                seq_length=mx, num_tokens=arg.vocab_size, num_classes=NUM_CLS, max_pool=arg.max_pool)
     if torch.cuda.is_available():
         model.cuda()
-    
-    model = nn.DataParallel(model,device_ids=[0,1,2])
 
-    opt = torch.optim.SGD(lr=arg.lr, params=model.parameters(), momentum =arg.momentum)
-    sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / (arg.lr_warmup / arg.batch_size), 1.0))
+    model = nn.DataParallel(model, device_ids=[0, 1, 2])
 
-    #accuracy to save the best model state
+    opt = torch.optim.SGD(
+        lr=arg.lr, params=model.parameters(), momentum=arg.momentum)
+    sch = torch.optim.lr_scheduler.LambdaLR(
+        opt, lambda i: min(i / (arg.lr_warmup / arg.batch_size), 1.0))
+
+    # accuracy to save the best model state
     best_accuracy = 0
     best_model_state = None
-    
+
     # training loop
     seen = 0
     for e in range(arg.num_epochs):
@@ -100,18 +112,20 @@ def go(arg):
             # clip gradients
             # - If the total gradient vector has a length > 1, we clip it back down to 1.
             if arg.gradient_clipping > 0.0:
-                nn.utils.clip_grad_norm_(model.parameters(), arg.gradient_clipping)
+                nn.utils.clip_grad_norm_(
+                    model.parameters(), arg.gradient_clipping)
 
             opt.step()
             sch.step()
 
             seen += input.size(0)
-            tbw.add_scalar('classification/train-loss', float(loss.item()), seen)
+            tbw.add_scalar('classification/train-loss',
+                           float(loss.item()), seen)
 
         with torch.no_grad():
 
             model.train(False)
-            tot, cor= 0.0, 0.0
+            tot, cor = 0.0, 0.0
 
             for batch in test_iter:
 
@@ -131,17 +145,17 @@ def go(arg):
 
             # update the best model
             if acc > best_accuracy:
-                best_accuracy, best_model_state = acc, deepcopy(model.state_dict())
+                best_accuracy, best_model_state = acc, deepcopy(
+                    model.state_dict())
 
-    
     # if not model
 
     if not os.path.exists(MODEL_OUTPUT_PATH):
         os.mkdir(MODEL_OUTPUT_PATH)
-    
+
     time_stamp = datetime.now()
-    torch.save(best_model_state, MODEL_OUTPUT_PATH + 
-        f'{time_stamp}_SGD_momentum_{arg.momentum}_acc_{best_accuracy:3f}')
+    torch.save(best_model_state, MODEL_OUTPUT_PATH +
+               f'{time_stamp}_SGD_momentum_{arg.momentum}_acc_{best_accuracy:3f}')
 
 
 if __name__ == "__main__":

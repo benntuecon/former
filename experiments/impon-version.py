@@ -36,6 +36,7 @@ def go(arg):
         TEXT.build_vocab(train, max_size=arg.vocab_size - 2)
         LABEL.build_vocab(train)
 
+        # TODO: use other iterator
         train_iter, test_iter = data.BucketIterator.splits((train, test), batch_size=arg.batch_size, device=util.d())
     else:
         tdata, _ = datasets.IMDB.splits(TEXT, LABEL)

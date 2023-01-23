@@ -78,13 +78,14 @@ class SelfAttention(nn.Module):
         dot = F.softmax(dot, dim=2)
         # - dot now has row-wise self-attention probabilities
 
+        att = dot.copy()
         # apply the self attention to the values
         out = torch.bmm(dot, values).view(b, h, t, s)
 
         # swap h, t back, unify heads
         out = out.transpose(1, 2).contiguous().view(b, t, s * h)
 
-        return self.unifyheads(out)
+        return self.unifyheads(out), att
 
 class SelfAttentionNarrow(nn.Module):
     """
@@ -476,7 +477,7 @@ class SelfAttentionRelative(nn.Module):
 
 class TransformerBlock(nn.Module):
 
-    def __init__(self, emb, heads, mask, seq_length, ff_hidden_mult=4, dropout=0.0, attention_type='default', pos_embedding=None):
+    def __init__(self, emb, heads, mask, seq_length, ff_hidden_mult=4, dropout=0.0, attention_type='default', pos_embedding=None, output_attention=False):
         super().__init__()
 
         if attention_type == 'default':
@@ -509,7 +510,7 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
 
-        attended = self.attention(x)
+        attended, attention_layer = self.attention(x)
 
         x = self.norm1(attended + x)
 
@@ -521,4 +522,4 @@ class TransformerBlock(nn.Module):
 
         x = self.do(x)
 
-        return x
+        return x, attention_layer
