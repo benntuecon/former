@@ -103,7 +103,8 @@ def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, 
 
         torch.cuda.empty_cache() 
         texts, labels, index = texts.to(device), labels.to(device), index.to(device)
-        outputs = model(texts)
+        outputs_with_attention = model(texts)
+        outputs = outputs_with_attention[0]
 
         prob, loss, loss_all = CE_loss(outputs, labels, device, args, criterion)
 
@@ -169,7 +170,8 @@ def testing(args, model, device, test_loader):
     with torch.no_grad():
         for batch_idx, (data, target, index) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            output_with_attention = model(data)
+            output = output_with_attention[0]
             output = F.log_softmax(output, dim=1)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             loss_per_batch.append(F.nll_loss(output, target).item())
