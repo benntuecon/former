@@ -1,3 +1,9 @@
+*.txt
+*.pyc
+*.feat
+*.usfca*
+*.vocab
+.data
 *.data/*
 */__pycache__/*
 runs/*
