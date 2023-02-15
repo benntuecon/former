@@ -65,19 +65,44 @@ def go(arg):
 
     model = nn.DataParallel(model, device_ids=[0, 1, 2])
     # opt = torch.optim.Adam(lr=arg.lr, params=model.parameters())
-    opt = torch.optim.SGD(lr=arg.lr,params=model.parameters())
+    opt = torch.optim.SGD(lr=arg.lr,params=model.parameters(), momentum=arg.momentum)
     sch = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(i / (arg.lr_warmup / arg.batch_size), 1.0))
 
     # training loop
     seen = 0
+    
+    loss_train_epoch = []
+    loss_val_epoch = []
+    acc_train_per_epoch = []
+    acc_val_per_epoch = []
+    
+    res_path = os.path.join('./', 'metrics' + '_{0}'.format(arg.method))
+
+    if not os.path.isdir(res_path):
+        os.makedirs(res_path)
+
     for e in range(arg.num_epochs):
         train_iter = prepare_loader(arg, train_iter, e)
 
         loss_per_epoch, _, top1_train_ac = train_CrossEntropy(arg, model, device, \
                                                         train_iter, opt, sch,e)
+        
+        loss_train_epoch += [loss_per_epoch]
 
         print('######  testing')
         loss_per_epoch, acc_val_per_epoch_i = testing(arg, model, device, test_iter)
+        loss_val_epoch += [loss_per_epoch]
+        
+        acc_train_per_epoch += [top1_train_ac]
+        acc_val_per_epoch += acc_val_per_epoch_i
+
+        # Save losses:
+        np.save(res_path + '/' + 'LOSS_epoch_train.npy', np.asarray(loss_train_epoch))
+        np.save(res_path + '/' + 'LOSS_epoch_val.npy', np.asarray(loss_val_epoch))
+
+        # Save accuracies:
+        np.save(res_path + '/' + 'accuracy_per_epoch_train.npy', np.asarray(acc_train_per_epoch))
+        np.save(res_path + '/' + 'accuracy_per_epoch_val.npy', np.asarray(acc_val_per_epoch))
 
         print(f'\n epoch {e}')
         
@@ -110,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--learn-rate",
                         dest="lr",
                         help="Learning rate",
-                        default=0.1, type=float)
+                        default=0.05, type=float)
 
     parser.add_argument("-T", "--tb_dir", dest="tb_dir",
                         help="Tensorboard logging directory",
