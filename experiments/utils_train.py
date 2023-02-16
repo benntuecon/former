@@ -176,9 +176,14 @@ def testing(args, model, device, test_loader):
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             loss_per_batch.append(F.nll_loss(output, target).item())
             pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+
+            pred_flatten = pred.flatten()
+            indices = pred_flatten != target
+            incorrect_indices.extend(index[indices].numpy())
+
             correct += pred.eq(target.view_as(pred)).sum().item()
             acc_val_per_batch.append(100. * correct / ((batch_idx+1)*args.batch_size))
-
+    print('failed test indices', incorrect_indices, len(incorrect_indices))
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
