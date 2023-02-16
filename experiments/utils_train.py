@@ -123,7 +123,7 @@ def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, 
 
         num_samples =  len(train_loader.sampler)
 
-        if counter % 15 == 0:
+        if counter % 100 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: {:.0f}%, Learning rate: {:.6f}'.format(
                 epoch, counter * len(texts), num_samples, 100. * counter / len(train_loader), loss.item(),
                 prec1, optimizer.param_groups[0]['lr']))

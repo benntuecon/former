@@ -76,7 +76,7 @@ def go(arg):
     acc_train_per_epoch = []
     acc_val_per_epoch = []
     
-    res_path = os.path.join('./', 'metrics' + '_{0}'.format(arg.method))
+    res_path = os.path.join('./', 'metrics' + '_{0}_{1}_{2}_{3}'.format(arg.method,arg.lr,arg.momentum,arg.lr_warmup))
 
     if not os.path.isdir(res_path):
         os.makedirs(res_path)
@@ -105,6 +105,7 @@ def go(arg):
         np.save(res_path + '/' + 'accuracy_per_epoch_val.npy', np.asarray(acc_val_per_epoch))
 
         print(f'\n epoch {e}')
+    return model 
         
 if __name__ == "__main__":
 
@@ -198,6 +199,6 @@ if __name__ == "__main__":
 
     time = datetime.now()
     print('saving model ..')
-    with open(f'{time}-model.pkl', 'wb') as f:
+    with open(f'{time}-{options.method}_lr{options.lr}_{options.momentum}model.pkl', 'wb') as f:
         pickle.dump(model, f)
     print('model saved')
