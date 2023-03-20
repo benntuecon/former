@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils import *
+from utils import AverageMeter, accuracy_v2
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -16,6 +16,28 @@ def CE_loss(preds, labels, device, args, criterion):
     loss_all = criterion(preds, labels)
     loss = torch.mean(loss_all)
     return prob, loss, loss_all
+
+def CE_loss_with_entropy(att_layer, preds, labels, device, args, criterion, entropy_weight=0.1):
+    '''
+    The entropy loss is the entropy of the attention layer
+    Take the cross-entropy loss and add the entropy loss
+
+    @param att_layer: the attention layers of the model
+    @param entropy_weight: the weight of entropy loss vs cross-entropy loss
+    '''
+    prob = F.softmax(preds, dim=1)
+    # add the entropy loss
+    head_entropy = torch.mean(torch.sum(-att_layer * torch.log(att_layer + 1e-10), dim=1))
+    # print('shape of attention layer:', att_layer.shape)
+    # print('head_entropy = ', head_entropy)
+
+    # loss_all = criterion(preds, labels)
+    # loss = torch.mean(loss_all)
+    loss_all = (1-entropy_weight) * criterion(preds, labels) + entropy_weight * head_entropy
+    loss = torch.mean(loss_all)
+
+    return prob, loss, loss_all, head_entropy
+
 
 def mixup_criterion(pred, y_a, y_b, lam, criterion):
     prob = F.softmax(pred, dim=1)
@@ -84,11 +106,14 @@ def ricap_criterion(criterion, pred, c_, W_):
 #############################################################################################
 ########################            Training function             ###########################
 
-def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, epoch, lemniscate = 0, criterion = 0):
+def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, epoch, lemniscate = 0, criterion = 0, path=None):
+
     train_loss = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     criterion = nn.CrossEntropyLoss(reduction = 'none')
+
+    entropy_weight = args.entropy_weight
 
     # switch to train mode
     model.train()
@@ -104,9 +129,12 @@ def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, 
         torch.cuda.empty_cache() 
         texts, labels, index = texts.to(device), labels.to(device), index.to(device)
         outputs_with_attention = model(texts)
-        outputs = outputs_with_attention[0]
+        outputs, att = outputs_with_attention
 
-        prob, loss, loss_all = CE_loss(outputs, labels, device, args, criterion)
+        # prob, loss, loss_all = CE_loss(outputs, labels, device, args, criterion)
+
+        # putting only the first layer of the attention
+        prob, loss, loss_all, head_entropy = CE_loss_with_entropy(att[0], outputs, labels, device, args, criterion, entropy_weight=entropy_weight)
 
         loss.backward()
         optimizer.step()
@@ -123,14 +151,16 @@ def train_CrossEntropy(args, model, device, train_loader, optimizer, scheduler, 
 
         num_samples =  len(train_loader.sampler)
 
-        if counter % 15 == 0:
+        if counter % 400 == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}, Accuracy: {:.0f}%, Learning rate: {:.6f}'.format(
                 epoch, counter * len(texts), num_samples, 100. * counter / len(train_loader), loss.item(),
                 prec1, optimizer.param_groups[0]['lr']))
 
         counter = counter + 1
-
-    return train_loss.avg, top5.avg, top1.avg
+    
+    with open(path + '/entropy.csv', 'a') as f:
+        f.write(str(head_entropy) + '\n')
+    return train_loss.avg, top5.avg, top1.avg, head_entropy.item()
 
 def update_sampling_metrics(args, train_loader, loss_all, prob, index, labels, l_1):
 
@@ -183,7 +213,7 @@ def testing(args, model, device, test_loader):
 
             correct += pred.eq(target.view_as(pred)).sum().item()
             acc_val_per_batch.append(100. * correct / ((batch_idx+1)*args.batch_size))
-    print('failed test indices', incorrect_indices, len(incorrect_indices))
+    # print('failed test indices', incorrect_indices, len(incorrect_indices))
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),

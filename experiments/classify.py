@@ -1,6 +1,6 @@
 import former
-from former import util
-from former.util import d, here
+# from former import util
+# from former.util import d, here
 
 import torch
 from torch import nn
@@ -14,19 +14,16 @@ import pickle
 import numpy as np
 
 from argparse import ArgumentParser
-from torch.utils.tensorboard import SummaryWriter
-
 import random, tqdm, sys, math, gzip
-
+from torch.utils.tensorboard import SummaryWriter
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
-import time
-from get_data import *
-from utils_train import *
-
 import os
-from copy import deepcopy
-from datetime import datetime
+import pathlib
+
+from get_data import get_dataset, device
+from utils_train import train_CrossEntropy, testing,prepare_loader
+
 # Used for converting between nats and bits
 LOG2E = math.log2(math.e)
 TEXT = data.Field(lower=True, include_lengths=True, batch_first=True)
@@ -39,7 +36,7 @@ def go(arg):
     """
     Creates and trains a basic transformer for the IMDB sentiment classification task.
     """
-    tbw = SummaryWriter(log_dir=arg.tb_dir) # Tensorboard logging
+    tbw = SummaryWriter(log_dir=arg.tb_dir) # Tensorboard logging 
 
     trainset, testset = get_dataset(arg)
     train_iter = torch.utils.data.DataLoader(trainset, batch_size=arg.batch_size, \
@@ -75,18 +72,19 @@ def go(arg):
     loss_val_epoch = []
     acc_train_per_epoch = []
     acc_val_per_epoch = []
+    entropies = []
     
-    res_path = os.path.join('./', 'metrics' + '_{0}'.format(arg.method))
-
-    if not os.path.isdir(res_path):
-        os.makedirs(res_path)
+    # res_path = os.path.join('./', 'metrics' + '_{0}'.format(arg.method))
+    res_path = get_path(arg)
 
     for e in range(arg.num_epochs):
         train_iter = prepare_loader(arg, train_iter, e)
 
-        loss_per_epoch, _, top1_train_ac = train_CrossEntropy(arg, model, device, \
-                                                        train_iter, opt, sch,e)
+        path = get_path(arg)
+        loss_per_epoch, _, top1_train_ac, entropy = train_CrossEntropy(arg, model, device, \
+                                                        train_iter, opt, sch, e, path = path)
         
+        entropies += [entropy]
         loss_train_epoch += [loss_per_epoch]
 
         print('######  testing')
@@ -104,8 +102,30 @@ def go(arg):
         np.save(res_path + '/' + 'accuracy_per_epoch_train.npy', np.asarray(acc_train_per_epoch))
         np.save(res_path + '/' + 'accuracy_per_epoch_val.npy', np.asarray(acc_val_per_epoch))
 
-        print(f'\n epoch {e}')
+        # Save entropies:
+        np.save(res_path + '/' + 'entropy_per_epoch.npy', np.asarray(entropies))
+
+
+        # Save model every 5 epochs:
+        if e % 5 == 4:
+            save_model(arg, model, e)
+    
+    return model
         
+def save_model(options, model, epoch):
+    # check if directory exists
+    path = get_path(options)
+
+    print('saving model ..')
+    with open(f'{path}/e={epoch}-model.pkl', 'wb') as f:
+        pickle.dump(model, f)
+    print('model saved')
+
+def get_path(options):
+    path = f'm={options.method}-lr={options.lr}-ew={options.entropy_weight}'
+    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    return path
+
 if __name__ == "__main__":
 
     parser = ArgumentParser()
@@ -135,7 +155,7 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--learn-rate",
                         dest="lr",
                         help="Learning rate",
-                        default=0.05, type=float)
+                        default=0.01, type=float)
 
     parser.add_argument("-T", "--tb_dir", dest="tb_dir",
                         help="Tensorboard logging directory",
@@ -188,6 +208,11 @@ if __name__ == "__main__":
                         dest="momentum",
                         help="momentum for SGD",
                         default=0.9, type=float)
+    
+    parser.add_argument("--entropy_weight",
+                        dest="entropy_weight",
+                        help="weight for entropy loss",
+                        default=0.1, type=float)
 
     options = parser.parse_args()
 
@@ -196,8 +221,5 @@ if __name__ == "__main__":
 
     model = go(options)
 
-    time = datetime.now()
-    print('saving model ..')
-    with open(f'{time}-model.pkl', 'wb') as f:
-        pickle.dump(model, f)
-    print('model saved')
+    # time = datetime.now()
+    # save_model(options, model)
